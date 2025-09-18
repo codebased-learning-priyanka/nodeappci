@@ -1,60 +1,90 @@
 pipeline {
-    agent any // This tells Jenkins to run on any available agent/node
+    agent any // Run on any available Jenkins agent/node
+
+    options {
+        timeout(time: 1, unit: 'HOURS') // Set a timeout for the pipeline
+        buildDiscarder(log: 5) // Keep only the last 5 builds to save space
+    }
 
     stages {
-        // Stage 1: Get the Code
+        // Stage 1: Checkout code from version control
         stage('Checkout') {
             steps {
-                git branch: 'main', url: 'https://github.com/yourusername/yournodeapp.git'
+                echo 'Checking out source code from GitHub...'
+                git branch: 'main', url: 'https://github.com/yourusername/yoursimplenodeapp.git'
             }
         }
 
-        // Stage 2: Install Dependencies
-        stage('Install') {
+        // Stage 2: Install dependencies using npm
+        stage('Install Dependencies') {
             steps {
-                sh 'npm install' // Runs the shell command 'npm install'
+                echo 'Installing npm dependencies...'
+                sh 'npm install'
             }
         }
 
-        // Stage 3: Check Code Quality
-        stage('Lint') {
+        // Stage 3: Run a linter to check code quality
+        stage('Lint Code') {
             steps {
-                sh 'npm run lint' // Assumes you have a lint script in package.json
+                echo 'Running ESLint for code style checks...'
+                sh 'npm run lint' // This script must be defined in package.json
             }
         }
 
-        // Stage 4: Run Tests
-        stage('Test') {
+        // Stage 4: Run the unit tests
+        stage('Run Tests') {
             steps {
-                sh 'npm test' // Runs the test script
+                echo 'Running unit tests with Mocha/Jest...'
+                sh 'npm test'
             }
             post {
+                // This action runs AFTER the "Test" stage completes
                 always {
-                    junit 'testresults.xml' // Archive test results (if your test framework generates JUnit XML)
+                    junit 'testresults.xml' // Archive JUnitstyle test results (if generated)
+                    echo 'Test stage completed. Results archived.'
                 }
             }
         }
 
-        // Stage 5: Deploy (only if on the main branch and tests passed)
-        stage('Deploy') {
-            when {
-                branch 'main'
-            }
+        // Stage 5: Build the application (e.g., create a package)
+        stage('Build') {
             steps {
-                sh './deploy.sh' // A hypothetical script that deploys your app
+                echo 'Building the application...'
+                sh 'npm run build' // Could create a /dist folder
+            }
+        }
+
+        // Stage 6: Archive the built application as an artifact
+        stage('Archive Artifact') {
+            steps {
+                echo 'Archiving the build artifact...'
+                archiveArtifacts artifacts: 'dist//', fingerprint: true
+                // Archives everything in the 'dist' directory
             }
         }
     }
 
-    // Postbuild actions
+    // Postbuild actions run after ALL stages are finished
     post {
-        failure {
-            emailext body: 'Project ${JOB_NAME} build ${BUILD_NUMBER} failed.\\nCheck it at ${BUILD_URL}',
-                    subject: 'Jenkins Build Failed',
-                    to: 'devteam@yourcompany.com'
+        always {
+            echo "Pipeline execution for build ${env.BUILD_ID} is complete."
+            cleanWs() // Clean up the workspace
         }
         success {
-            echo 'Build and deployment were successful!'
+            emailext (
+                subject: "SUCCESS: Pipeline '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
+                body: "The pipeline succeeded. Check it out at ${env.BUILD_URL}",
+                to: "devteam@yourcompany.com"
+            )
+            echo 'This will run only if the entire pipeline was successful.'
+        }
+        failure {
+            emailext (
+                subject: "FAILED: Pipeline '${env.JOB_NAME} [${env.BUILD_NUMBER}]'",
+                body: "The pipeline failed. Check the logs at ${env.BUILD_URL}",
+                to: "devteam@yourcompany.com"
+            )
+            echo 'This will run only if the pipeline had a failure.'
         }
     }
 }
